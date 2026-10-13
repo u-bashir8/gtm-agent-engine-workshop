@@ -34,6 +34,9 @@ from . import data_service
 from .data_service import REP_IDS
 
 MODEL_NAME = "gpt-4o-mini"
+REVENUE_FIT_WEIGHT = 0.4
+TECH_STACK_MATCH_WEIGHT = 0.4
+SEGMENT_FIT_WEIGHT = 0.2
 
 # ---------------------------------------------------------------------------
 # Tools
@@ -68,13 +71,14 @@ def build_prospect_profile(prospect_id: str) -> dict:
 
 
 SCORING_PROMPT = (
-    "You are a GTM assistant. Score the prospect's potential for the offering from "
-    "1 to 100 based on how good a fit they are, weighing their annual revenue and "
-    "tech stack. In your justification, explicitly list which of the offering's required "
-    "technologies the prospect has and which required technologies they are missing, naming "
-    "each one. Any missing required technology must lower the tech_stack_match component and "
-    "the overall score. Return a score and a justification that reflects your "
-    "overall assessment of this prospect's potential."
+    "You are a GTM assistant assessing the prospect's fit for the offering. Return "
+    "0-100 scores for revenue_fit, tech_stack_match, and segment_fit, plus a concise "
+    "justification. revenue_fit measures annual revenue against the offering's minimum; "
+    "tech_stack_match measures the fraction of required technologies in the prospect's "
+    "stack; segment_fit measures alignment between the offering's target_segment and the "
+    "prospect's industry and sub-industry in account details. Name required technologies present "
+    "and missing in the justification. The system computes tech_stack_match from the "
+    "required and fetched prospect stacks and computes the overall score from the rubric."
 )
 
 from typing import Literal
@@ -86,14 +90,12 @@ class RubricBreakdown(BaseModel):
     component_max: Literal[100] = 100
 
 
-class ProspectScore(BaseModel):
-    score: float
-    max_score: int = 100
+class ProspectAssessment(BaseModel):
     justification: str
     rubric_breakdown: RubricBreakdown
 
 
-_scoring_llm = ChatOpenAI(model=MODEL_NAME, temperature=0).with_structured_output(ProspectScore)
+_scoring_llm = ChatOpenAI(model=MODEL_NAME, temperature=0).with_structured_output(ProspectAssessment)
 
 
 def _offering_has_required_fields(offering):
@@ -119,7 +121,26 @@ def score_prospect(prospect_profile: dict, offering: dict | None = None) -> dict
         {"role": "system", "content": SCORING_PROMPT},
         {"role": "user", "content": user},
     ])
-    return result.model_dump()
+    assessment = result.model_dump()
+    required_technologies = offering.get("required_tech_stack") or []
+    prospect_technologies = prospect_profile.get("tech_stack") or []
+    if required_technologies:
+        assessment["rubric_breakdown"]["tech_stack_match"] = (
+            100
+            * len(set(required_technologies).intersection(prospect_technologies))
+            / len(required_technologies)
+        )
+    else:
+        assessment["rubric_breakdown"]["tech_stack_match"] = 0.0
+    rubric = assessment["rubric_breakdown"]
+    assessment["score"] = round(
+        REVENUE_FIT_WEIGHT * rubric["revenue_fit"]
+        + TECH_STACK_MATCH_WEIGHT * rubric["tech_stack_match"]
+        + SEGMENT_FIT_WEIGHT * rubric["segment_fit"],
+        1,
+    )
+    assessment["max_score"] = 100
+    return assessment
 
 
 @tool
