@@ -1,17 +1,16 @@
-"""GTM assistant agent.
+"""GTM assistant agent built with LangChain's ``create_agent``.
 
-A deep agent (built with ``deepagents.create_deep_agent``) with
-seven tools - lookup_offering, build_prospect_profile, get_prospect,
-get_current_rep, send_prospect_email, score_prospect, and
-update_prospect_info. The tools call the data-access layer in ``data_service`` for
-storage and retrieval.
+The agent uses seven GTM tools - lookup_offering, build_prospect_profile,
+get_prospect, get_current_rep, send_prospect_email, score_prospect, and
+update_prospect_info. The tools call the data-access layer in ``data_service``
+for storage and retrieval.
 
 Configure credentials via environment variables or a .env file
 (OPENAI_API_KEY, and optionally LANGSMITH_API_KEY / LANGSMITH_PROJECT for
 tracing), then call run_agent(...) with a rep request.
 
 Install:
-    uv add deepagents langchain langgraph langchain-openai langsmith python-dotenv
+    uv add langchain langgraph langchain-openai langsmith python-dotenv
 """
 
 import json
@@ -27,8 +26,8 @@ os.environ.setdefault("LANGSMITH_TRACING", "true")
 
 from pydantic import BaseModel
 from langchain.tools import tool, ToolRuntime
+from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
-from deepagents import create_deep_agent
 
 from . import data_service
 from .data_service import REP_IDS
@@ -197,11 +196,15 @@ SYSTEM_PROMPT = (
 
 agent_model = ChatOpenAI(model=MODEL_NAME, temperature=0)
 
-gtm_agent = create_deep_agent(
-    model=agent_model,
-    tools=[lookup_offering, build_prospect_profile, get_prospect, send_prospect_email, score_prospect, update_prospect_info, get_current_rep],
-    system_prompt=SYSTEM_PROMPT
-)
+def _create_gtm_agent(model):
+    return create_agent(
+        model=model,
+        tools=[lookup_offering, build_prospect_profile, get_prospect, send_prospect_email, score_prospect, update_prospect_info, get_current_rep],
+        system_prompt=SYSTEM_PROMPT,
+    )
+
+
+gtm_agent = _create_gtm_agent(agent_model)
 
 
 # Ordered most- to least-specific: the first matching intent wins, so a request
