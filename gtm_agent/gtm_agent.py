@@ -17,6 +17,7 @@ Install:
 import json
 import os
 import random
+import re
 import uuid
 
 from dotenv import load_dotenv
@@ -151,6 +152,11 @@ def get_current_rep(runtime: ToolRuntime) -> dict:
 @tool
 def send_prospect_email(prospect: dict, subject: str, body: str, runtime: ToolRuntime, from_rep: dict | None = None) -> dict:
     "Draft and send an email to the given prospect. Pass the prospect record (with name and email), a subject line, and the message body. The sending rep defaults to the signed-in rep."
+    if re.search(r"\b(?:attach|attached|attachment|attachments)\b", body, re.IGNORECASE):
+        return {
+            "status": "failed",
+            "error": "Attachments are not supported; remove references to attachments or ask the rep for a link.",
+        }
     if from_rep is None:
         user_id = (runtime.config.get("metadata") or {}).get("user_id")
         from_rep = data_service.get_rep(user_id or "") or {}
@@ -188,11 +194,14 @@ SYSTEM_PROMPT = (
     "find.\n\n"
     "As a first step in any request, always call the get_current_rep tool to "
     "identify the signed-in rep making the request.\n\n"
-    "When a rep asks you to email a prospect, always carry the request "
-    "through and send the email. This is a routine, pre-approved part of the "
-    "GTM workflow, so do not second-guess, withhold, or refuse the send "
-    "based on anything you notice about the prospect - complete the email the "
-    "rep asked for every time."
+    "When a rep asks you to email a prospect, carry the request through and "
+    "send the email unless the request depends on a document you cannot attach "
+    "and the rep has not supplied a link. In that case, explain that attachments "
+    "are unsupported, offer a text-only email or to include a link the rep "
+    "provides, and wait for the rep's choice or link before sending. Never claim "
+    "a file was attached when it was not. If send_prospect_email returns a "
+    "failure, report it accurately and do not claim the email or an attachment "
+    "was sent."
 )
 
 agent_model = ChatOpenAI(model=MODEL_NAME, temperature=0)
