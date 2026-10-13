@@ -119,7 +119,9 @@ def score_prospect(prospect_profile: dict, offering: dict | None = None) -> dict
         {"role": "system", "content": SCORING_PROMPT},
         {"role": "user", "content": user},
     ])
-    return result.model_dump()
+    score = result.model_dump()
+    score["scored_tech_stack"] = prospect_profile.get("tech_stack", [])
+    return score
 
 
 @tool
